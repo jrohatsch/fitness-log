@@ -12,6 +12,9 @@ const config = {
 			assets: 'build',
 			fallback: 'index.html'
 		}),
+		paths: {
+			base: '/fitness-log'
+		},
 		prerender: {
 			crawl: true,
 			entries: ['*']
