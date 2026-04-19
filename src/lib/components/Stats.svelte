@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { sessions, exercises, type Session, type ExerciseDefinition } from '$lib/stores';
+	import { exportToTSV, downloadTSV, downloadJSON } from '$lib/export';
 	import { onMount } from 'svelte';
 
 	let sessionList = $state<Session[]>([]);
@@ -53,6 +54,22 @@
 		});
 	}
 
+	function handleExportTSV() {
+		const content = exportToTSV(sessionList, exerciseList);
+		if (content) {
+			const date = new Date().toISOString().split('T')[0];
+			downloadTSV(content, `fitness-log-${date}.tsv`);
+		}
+	}
+
+	function handleExportJSON() {
+		const date = new Date().toISOString().split('T')[0];
+		downloadJSON(
+			{ sessions: sessionList, exercises: exerciseList },
+			`fitness-log-${date}.json`
+		);
+	}
+
 	function getProgressTrend(exerciseId: string): string {
 		const stat = stats[exerciseId];
 		if (!stat || stat.sessions < 2) return '—';
@@ -80,6 +97,14 @@
 		{#if sessionList.length > 0}
 			<div class="stats-info">
 				{sessionList.length} Trainingseinheiten
+			</div>
+			<div class="export-buttons">
+				<button class="btn-export btn-export-tsv" onclick={handleExportTSV}>
+					TSV exportieren
+				</button>
+				<button class="btn-export btn-export-json" onclick={handleExportJSON}>
+					JSON exportieren
+				</button>
 			</div>
 		{/if}
 	</div>
@@ -147,6 +172,39 @@
 		font-size: 12px;
 		color: #9ca3af;
 		margin-top: 6px;
+	}
+
+	.export-buttons {
+		display: flex;
+		gap: 8px;
+		margin-top: 12px;
+	}
+
+	.btn-export {
+		padding: 8px 12px;
+		border: 1px solid #d1d5db;
+		border-radius: 4px;
+		font-size: 12px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s;
+		background: white;
+		color: #1f2937;
+	}
+
+	.btn-export:active {
+		background: #f3f4f6;
+		border-color: #1f2937;
+	}
+
+	.btn-export-tsv {
+		border-color: #1f2937;
+		color: #1f2937;
+	}
+
+	.btn-export-json {
+		border-color: #6b7280;
+		color: #6b7280;
 	}
 
 	.empty-stats {
