@@ -20,7 +20,7 @@ export function exportToTSV(sessions: Session[], exercises: ExerciseDefinition[]
 	});
 
 	// Create header row
-	const headers = ['Datum', ...exercises.map(e => e.name)];
+	const headers = ['Datum', ...exercises.map(e => e.name + " (" + e.unit + ")")];
 	const lines: string[] = [headers.join('\t')];
 
 	// Create data rows
