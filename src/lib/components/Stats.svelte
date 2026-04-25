@@ -1,7 +1,12 @@
 <script lang="ts">
-	import { sessions, exercises, type Session, type ExerciseDefinition } from '$lib/stores';
-	import { exportToTSV, downloadTSV, downloadJSON } from '$lib/export';
-	import { onMount } from 'svelte';
+	import {
+		sessions,
+		exercises,
+		type Session,
+		type ExerciseDefinition,
+	} from "$lib/stores";
+	import { exportToTSV, downloadTSV } from "$lib/export";
+	import { onMount } from "svelte";
 
 	let sessionList = $state<Session[]>([]);
 	let exerciseList = $state<ExerciseDefinition[]>([]);
@@ -10,14 +15,14 @@
 	let unsubscribeExercises: (() => void) | null = null;
 
 	onMount(() => {
-		unsubscribeSessions = sessions.subscribe(s => {
-			console.log('Stats received updated sessions:', s);
+		unsubscribeSessions = sessions.subscribe((s) => {
+			console.log("Stats received updated sessions:", s);
 			sessionList = s;
 			calculateStats();
 		});
 
-		unsubscribeExercises = exercises.subscribe(e => {
-			console.log('Stats received updated exercises:', e);
+		unsubscribeExercises = exercises.subscribe((e) => {
+			console.log("Stats received updated exercises:", e);
 			exerciseList = e;
 			calculateStats();
 		});
@@ -31,14 +36,20 @@
 	function calculateStats() {
 		stats = {};
 
-		exerciseList.forEach(exercise => {
-			const exerciseSessions = sessionList.filter(s => s.exercises[exercise.id]?.value);
+		exerciseList.forEach((exercise) => {
+			const exerciseSessions = sessionList.filter(
+				(s) => s.exercises[exercise.id]?.value,
+			);
 			if (exerciseSessions.length === 0) return;
 
-			const values = exerciseSessions.map(s => {
-				const val = s.exercises[exercise.id].value;
-				return typeof val === 'number' ? val : parseFloat(val as string);
-			}).filter(v => !isNaN(v));
+			const values = exerciseSessions
+				.map((s) => {
+					const val = s.exercises[exercise.id].value;
+					return typeof val === "number"
+						? val
+						: parseFloat(val as string);
+				})
+				.filter((v) => !isNaN(v));
 
 			if (values.length > 0) {
 				stats[exercise.id] = {
@@ -46,9 +57,11 @@
 					current: values[0],
 					max: Math.max(...values),
 					min: Math.min(...values),
-					avg: (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2),
+					avg: (
+						values.reduce((a, b) => a + b, 0) / values.length
+					).toFixed(2),
 					unit: exercise.unit,
-					sessions: exerciseSessions.length
+					sessions: exerciseSessions.length,
 				};
 			}
 		});
@@ -57,56 +70,161 @@
 	function handleExportTSV() {
 		const content = exportToTSV(sessionList, exerciseList);
 		if (content) {
-			const date = new Date().toISOString().split('T')[0];
+			const date = new Date().toISOString().split("T")[0];
 			downloadTSV(content, `fitness-log-${date}.tsv`);
 		}
 	}
 
-	function handleExportJSON() {
-		const date = new Date().toISOString().split('T')[0];
-		downloadJSON(
-			{ sessions: sessionList, exercises: exerciseList },
-			`fitness-log-${date}.json`
-		);
+	function parseTSV(tsv: string): {
+		sessions: Session[];
+		exercises: ExerciseDefinition[];
+	} {
+		const lines = tsv.trim().split("\n");
+		if (lines.length < 2) throw new Error("Ungültiges TSV-Format");
+
+		const header = lines[0].split("\t");
+		const exerciseNames = header.slice(1); // These are exercise names, not IDs
+
+		// Validate and normalize the first column (date)
+		const firstLine = lines[1]?.split("\t")[0] || '';
+		const isDisplayFormat = /^\d{2}\.\d{2}\.\d{4}$/.test(firstLine); // DD.MM.YYYY
+
+		// Match exercise names to existing exercises or create new ones
+		const exercises: ExerciseDefinition[] = exerciseNames.map((name) => {
+			// Extract exercise name and unit from format like "Kniebeugen (kg)"
+			const parts = name.split("(");
+			const exerciseName = parts[0].trim();
+			const unit = parts[1]?.replace(")", "").trim() || "";
+
+			const existing = exerciseList.find((e) => e.name === exerciseName);
+			if (existing) {
+				return existing;
+			}
+			// Create new exercise if it doesn't exist
+			return {
+				id: `exercise-${Date.now()}-${Math.random()}`,
+				name: exerciseName,
+				unit,
+				category: "imported",
+			};
+		});
+
+		const sessions: Session[] = lines.slice(1).map((line, lineIndex) => {
+			const parts = line.split("\t");
+			let date = parts[0];
+
+			// handle date format DD.MM.YYYY
+			if (isDisplayFormat) {
+				const [day, month, year] = date.split(".").map(Number);
+				date = new Date(year, month - 1, day).toISOString().split("T")[0];
+			} else if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+				throw new Error(`Ungültiges Datumsformat in Zeile ${lineIndex + 2}: ${date}`);
+			}
+
+			const exercisesData: Record<string, { value: number | string }> =
+				{};
+
+			exerciseNames.forEach((name, colIndex) => {
+				const exercise = exercises[colIndex];
+				const rawValue = parts[colIndex + 1];
+				if (rawValue && rawValue.trim() !== "") {
+					// Try to parse as number, otherwise keep as string
+					const numValue = Number(rawValue);
+					exercisesData[exercise.id] = {
+						value: isNaN(numValue) ? rawValue : numValue,
+					};
+				}
+			});
+
+			return {
+				id: `imported-session-${Date.now()}-${lineIndex}`,
+				date,
+				exercises: exercisesData,
+			};
+		});
+
+		return { sessions, exercises };
+	}
+
+	function handleImportTSV() {
+		const input = document.createElement("input");
+		input.type = "file";
+		input.accept = ".tsv";
+		input.onchange = async () => {
+			if (input.files && input.files[0]) {
+				const file = input.files[0];
+				const text = await file.text();
+				try {
+					const {
+						sessions: importedSessions,
+						exercises: importedExercises,
+					} = parseTSV(text);
+
+					for (const exercise of importedExercises) {
+						if (!exerciseList.some((e) => e.id === exercise.id)) {
+							exercises.addExercise(exercise);
+						}
+					}
+
+					for (const session of importedSessions) {
+						if (!sessionList.some((s) => s.id === session.id)) {
+							sessions.addSession(session);
+						}
+					}
+				} catch (error) {
+					console.error("Error parsing TSV:", error);
+					alert(
+						"Fehler beim Importieren der TSV-Datei. Bitte stellen Sie sicher, dass das Format korrekt ist.",
+					);
+				}
+			}
+		};
+		input.click();
 	}
 
 	function getProgressTrend(exerciseId: string): string {
 		const stat = stats[exerciseId];
-		if (!stat || stat.sessions < 2) return '—';
+		if (!stat || stat.sessions < 2) return "—";
 
-		const first = sessionList.filter(s => s.exercises[exerciseId]?.value).pop()?.exercises[exerciseId].value || 0;
+		const first =
+			sessionList.filter((s) => s.exercises[exerciseId]?.value).pop()
+				?.exercises[exerciseId].value || 0;
 		const current = stat.current;
 		const diff = current - first;
 
 		if (diff > 0) return `+${diff.toFixed(1)}`;
 		if (diff < 0) return `${diff.toFixed(1)}`;
-		return '→';
+		return "→";
 	}
 
 	function getProgressColor(exerciseId: string): string {
 		const trend = getProgressTrend(exerciseId);
-		if (trend.startsWith('+')) return '#22c55e';
-		if (trend.startsWith('-') && trend !== '—') return '#ef4444';
-		return '#6b7280';
+		if (trend.startsWith("+")) return "#22c55e";
+		if (trend.startsWith("-") && trend !== "—") return "#ef4444";
+		return "#6b7280";
 	}
 </script>
 
 <div class="stats-container">
 	<div class="stats-header">
 		<h2>Fortschritt</h2>
-		{#if sessionList.length > 0}
-			<div class="stats-info">
-				{sessionList.length} Trainingseinheiten
-			</div>
-			<div class="export-buttons">
-				<button class="btn-export btn-export-tsv" onclick={handleExportTSV}>
+
+		<div class="stats-info">
+			{sessionList.length} Trainingseinheiten
+		</div>
+		<div class="data-buttons">
+			{#if sessionList.length > 0}
+				<button
+					class="btn-export btn-export-tsv"
+					onclick={handleExportTSV}
+				>
 					TSV exportieren
 				</button>
-				<button class="btn-export btn-export-json" onclick={handleExportJSON}>
-					JSON exportieren
-				</button>
-			</div>
-		{/if}
+			{/if}
+			<button class="btn-export btn-export-tsv" onclick={handleImportTSV}>
+				TSV importieren
+			</button>
+		</div>
 	</div>
 
 	{#if Object.keys(stats).length === 0}
@@ -125,7 +243,10 @@
 					<div class="stat-secondary">
 						<div class="stat-row">
 							<span class="label">Trend:</span>
-							<span class="value" style="color: {getProgressColor(exerciseId)}">
+							<span
+								class="value"
+								style="color: {getProgressColor(exerciseId)}"
+							>
 								{getProgressTrend(exerciseId)}
 							</span>
 						</div>
@@ -174,7 +295,7 @@
 		margin-top: 6px;
 	}
 
-	.export-buttons {
+	.data-buttons {
 		display: flex;
 		gap: 8px;
 		margin-top: 12px;
@@ -200,11 +321,6 @@
 	.btn-export-tsv {
 		border-color: #1f2937;
 		color: #1f2937;
-	}
-
-	.btn-export-json {
-		border-color: #6b7280;
-		color: #6b7280;
 	}
 
 	.empty-stats {

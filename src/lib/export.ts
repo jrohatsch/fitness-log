@@ -6,9 +6,18 @@ export function exportToTSV(sessions: Session[], exercises: ExerciseDefinition[]
 	}
 
 	// Sort sessions by date (oldest first)
-	const sortedSessions = [...sessions].sort((a, b) =>
-		new Date(a.date).getTime() - new Date(b.date).getTime()
-	);
+	// Dates are stored in DD.MM.YYYY format, so we need to convert for sorting
+	const sortedSessions = [...sessions].sort((a, b) => {
+		const parseDate = (dateStr: string) => {
+			// Handle both DD.MM.YYYY and YYYY-MM-DD formats
+			if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+				const [day, month, year] = dateStr.split('.');
+				return new Date(`${year}-${month}-${day}`).getTime();
+			}
+			return new Date(dateStr).getTime();
+		};
+		return parseDate(a.date) - parseDate(b.date);
+	});
 
 	// Create header row
 	const headers = ['Datum', ...exercises.map(e => e.name)];
@@ -35,21 +44,6 @@ export function exportToTSV(sessions: Session[], exercises: ExerciseDefinition[]
 
 export function downloadTSV(content: string, filename: string = 'fitness-log.tsv'): void {
 	const blob = new Blob([content], { type: 'text/tab-separated-values;charset=utf-8;' });
-	const link = document.createElement('a');
-	const url = URL.createObjectURL(blob);
-
-	link.setAttribute('href', url);
-	link.setAttribute('download', filename);
-	link.style.visibility = 'hidden';
-
-	document.body.appendChild(link);
-	link.click();
-	document.body.removeChild(link);
-}
-
-export function downloadJSON(data: { sessions: Session[]; exercises: ExerciseDefinition[] }, filename: string = 'fitness-log.json'): void {
-	const json = JSON.stringify(data, null, 2);
-	const blob = new Blob([json], { type: 'application/json;charset=utf-8;' });
 	const link = document.createElement('a');
 	const url = URL.createObjectURL(blob);
 

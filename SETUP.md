@@ -101,7 +101,7 @@ Reusable component for a single exercise:
 ```typescript
 {
   id: string;              // Unique ID
-  date: string;            // YYYY-MM-DD format
+  date: string;            // DD.MM.YYYY format
   exercises: {
     [exerciseId]: {
       value: number | string;

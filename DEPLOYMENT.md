@@ -75,7 +75,7 @@ Since GitHub Pages uses the project name in the URL (`/fitness-log/`), localStor
 - Don't clear browser cache
 - Stay on the same GitHub Pages URL
 
-For a production app, consider adding cloud sync or exporting/importing data as JSON.
+For a production app, consider adding cloud sync or exporting/importing data as TSV.
 
 ## Deployment Status
 

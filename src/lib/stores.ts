@@ -61,9 +61,20 @@ function createSessionStore() {
 		
 		addSession: (session: Session) => {
             console.log('Adding session:', session);
-			update(sessions => [session, ...sessions].sort((a, b) => 
-				new Date(b.date).getTime() - new Date(a.date).getTime()
-			));
+			update(sessions => {
+				const sorted = [session, ...sessions].sort((a, b) => {
+					// Parse dates in DD.MM.YYYY or YYYY-MM-DD format
+					const parseDate = (dateStr: string) => {
+						if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+							const [day, month, year] = dateStr.split('.');
+							return new Date(`${year}-${month}-${day}`).getTime();
+						}
+						return new Date(dateStr).getTime();
+					};
+					return parseDate(b.date) - parseDate(a.date);
+				});
+				return sorted;
+			});
 		},
 
 		updateSession: (id: string, updates: Partial<Session>) => {
@@ -97,6 +108,8 @@ export const sessions = createSessionStore();
 function createExerciseStore() {
 	// Initialize with data from localStorage if available, otherwise use defaults
 	let initialData: ExerciseDefinition[] = defaultExercises;
+
+
 	if (typeof window !== 'undefined') {
 		const stored = localStorage.getItem('fitnessExercises');
 		if (stored) {
@@ -122,12 +135,16 @@ function createExerciseStore() {
 		subscribe,
 
 		addExercise: (exercise: ExerciseDefinition) => {
-			// Not implemented yet, but structure is ready
+			subscribe(exercises => {
+				if (!exercises.some(e => e.id === exercise.id)) {
+					const updated = [...exercises, exercise];
+					set(updated);
+				} else {
+					console.warn(`Exercise with id ${exercise.id} already exists.`);
+				}
+			});
 		},
 
-		removeExercise: (id: string) => {
-			// Not implemented yet, but structure is ready
-		},
 
 		loadFromLocalStorage: () => {
 			if (typeof window !== 'undefined') {
