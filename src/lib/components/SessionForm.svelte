@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { sessions, exercises, type Session } from '$lib/stores';
+	import { sessions, exercises, type Session, type ExerciseDefinition } from '$lib/stores';
 	import ExerciseInput from './ExerciseInput.svelte';
 	import { onMount } from 'svelte';
 
@@ -10,6 +10,12 @@
 	let sessionId = $state<string | null>(null);
 	let autoSaveTimeout: NodeJS.Timeout | null = null;
 	let allSessions: Session[] = [];
+	
+	// New exercise form state
+	let showAddExercise = $state(false);
+	let newExerciseName = $state('');
+	let newExerciseUnit = $state('');
+	let addingExercise = $state(false);
 
 	onMount(() => {
 		// Subscribe to all sessions
@@ -243,6 +249,36 @@
 
 		isSubmitting = false;
 	}
+
+	function handleAddExercise() {
+		if (!newExerciseName.trim()) {
+			alert('Bitte geben Sie einen Übungsnamen ein');
+			return;
+		}
+		if (!newExerciseUnit.trim()) {
+			alert('Bitte geben Sie eine Einheit ein');
+			return;
+		}
+
+		addingExercise = true;
+
+		const exerciseId = `custom_${Date.now()}`;
+		const newExercise: ExerciseDefinition = {
+			id: exerciseId,
+			name: newExerciseName.trim(),
+			unit: newExerciseUnit.trim(),
+			category: 'custom'
+		};
+
+		exercises.addExercise(newExercise);
+		console.log('New exercise added:', newExercise);
+
+		// Reset form
+		newExerciseName = '';
+		newExerciseUnit = '';
+		showAddExercise = false;
+		addingExercise = false;
+	}
 </script>
 
 <div class="form-container">
@@ -269,6 +305,59 @@
 					/>
 				{/each}
 			</div>
+
+			<button 
+				type="button"
+				class="btn-add-exercise"
+				onclick={() => showAddExercise = !showAddExercise}
+			>
+				+ Neue Übung hinzufügen
+			</button>
+
+			{#if showAddExercise}
+				<div class="add-exercise-form">
+					<div class="form-group">
+						<label for="exercise-name">Übungsname</label>
+						<input
+							id="exercise-name"
+							type="text"
+							bind:value={newExerciseName}
+							placeholder="z.B. Planks"
+							required
+						/>
+					</div>
+
+					<div class="form-group">
+						<label for="exercise-unit">Einheit</label>
+						<input
+							id="exercise-unit"
+							type="text"
+							bind:value={newExerciseUnit}
+							placeholder="z.B. Sekunden, kg, Wdh"
+							required
+						/>
+					</div>
+
+					<div class="form-actions">
+						<button 
+							type="button"
+							class="btn-confirm"
+							onclick={handleAddExercise}
+							disabled={addingExercise}
+						>
+							{addingExercise ? 'Wird hinzugefügt...' : 'Hinzufügen'}
+						</button>
+						<button 
+							type="button"
+							class="btn-cancel"
+							onclick={() => showAddExercise = false}
+							disabled={addingExercise}
+						>
+							Abbrechen
+						</button>
+					</div>
+				</div>
+			{/if}
 		</div>
 
 		<button type="submit" class="btn-submit" disabled={isSubmitting}>
@@ -323,6 +412,112 @@
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: 16px;
+	}
+
+	.btn-add-exercise {
+		margin-top: 12px;
+		padding: 10px 16px;
+		background: #e5e7eb;
+		color: #1f2937;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.2s;
+	}
+
+	.btn-add-exercise:hover {
+		background: #d1d5db;
+	}
+
+	.add-exercise-form {
+		margin-top: 16px;
+		padding: 16px;
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		border-radius: 6px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.form-group label {
+		font-weight: 600;
+		font-size: 13px;
+		color: #374151;
+	}
+
+	.form-group input {
+		padding: 10px;
+		border: 1px solid #d1d5db;
+		border-radius: 4px;
+		font-size: 14px;
+		font-family: inherit;
+		color: #1f2937;
+	}
+
+	.form-group input:focus {
+		outline: none;
+		border-color: #3b82f6;
+		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+	}
+
+	.form-actions {
+		display: flex;
+		gap: 8px;
+		margin-top: 4px;
+	}
+
+	.btn-confirm {
+		flex: 1;
+		padding: 10px;
+		background: #3b82f6;
+		color: white;
+		border: none;
+		border-radius: 4px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.2s;
+	}
+
+	.btn-confirm:hover:not(:disabled) {
+		background: #2563eb;
+	}
+
+	.btn-confirm:disabled {
+		background: #93c5fd;
+		cursor: not-allowed;
+	}
+
+	.btn-cancel {
+		flex: 1;
+		padding: 10px;
+		background: #f3f4f6;
+		color: #1f2937;
+		border: 1px solid #d1d5db;
+		border-radius: 4px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.2s;
+	}
+
+	.btn-cancel:hover:not(:disabled) {
+		background: #e5e7eb;
+	}
+
+	.btn-cancel:disabled {
+		background: #f9fafb;
+		cursor: not-allowed;
+		color: #9ca3af;
 	}
 
 	.btn-submit {
