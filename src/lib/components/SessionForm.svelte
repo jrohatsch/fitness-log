@@ -7,8 +7,16 @@
 	let exerciseList: any[] = $state([]);
 	let exerciseValues: Record<string, any> = $state({});
 	let isSubmitting = $state(false);
+	let sessionId = $state<string | null>(null);
+	let autoSaveTimeout: NodeJS.Timeout | null = null;
+	let allSessions: Session[] = [];
 
 	onMount(() => {
+		// Subscribe to all sessions
+		const unsubscribe = sessions.subscribe(s => {
+			allSessions = s;
+		});
+
 		exercises.subscribe(e => {
 			exerciseList = e;
 			// Initialize exercise values with proper reactivity
@@ -20,11 +28,164 @@
 			});
 			exerciseValues = newValues;
 		});
+
+		// Load existing session for today or create a new one
+		loadOrCreateSession();
+
+		return () => unsubscribe();
 	});
 
+	function loadOrCreateSession() {
+		// Check if a session for today already exists
+		const existingSession = allSessions.find(s => s.date === date && !s.id.startsWith('draft_') && Object.keys(s.exercises).length > 0);
+		
+		if (existingSession) {
+			// Load existing session
+			sessionId = existingSession.id;
+			
+			// Restore exercise values
+			Object.entries(existingSession.exercises).forEach(([id, exercise]) => {
+				if (exerciseValues[id]) {
+					exerciseValues[id] = {
+						value: exercise.value,
+						unit: exercise.unit,
+						notes: exercise.notes || ''
+					};
+				}
+			});
+			
+			console.log('Loaded existing session for date:', date, 'sessionId:', sessionId);
+		}
+	}
+
+	function createSession() {
+		sessionId = `session_${Date.now()}`;
+		const newSession: Session = {
+			id: sessionId,
+			date,
+			exercises: {}
+		};
+		sessions.addSession(newSession);
+		console.log('Session created:', sessionId);
+	}
+
+	function handleDateChange() {
+		// Only process date change if we have a session in progress
+		if (!sessionId) {
+			// Try to load existing session for new date
+			loadOrCreateSession();
+			return;
+		}
+
+		// Check if session for new date exists
+		const existingSession = allSessions.find(s => s.date === date && !s.id.startsWith('draft_'));
+		
+		if (existingSession && existingSession.id !== sessionId) {
+			// Merge current session with existing session for this date
+			console.log('Merging sessions for date:', date);
+			
+			const sessionExercises: Record<string, any> = {};
+
+			// Start with exercises from existing session
+			Object.entries(existingSession.exercises).forEach(([id, exercise]) => {
+				sessionExercises[id] = exercise;
+			});
+
+			// Merge in current exercises (current takes precedence)
+			Object.entries(exerciseValues).forEach(([id, data]) => {
+				const value = data.value?.toString().trim() || '';
+				if (value && value !== '0') {
+					sessionExercises[id] = {
+						value: isNaN(parseFloat(value)) ? value : parseFloat(value),
+						unit: data.unit,
+						notes: data.notes?.trim() || undefined
+					};
+				}
+			});
+
+			// Delete old session
+			if (sessionId) {
+				sessions.deleteSession(sessionId);
+			}
+
+			// Update existing session with merged data
+			sessions.updateSession(existingSession.id, {
+				id: existingSession.id,
+				date,
+				exercises: sessionExercises
+			});
+
+			sessionId = existingSession.id;
+		} else if (!existingSession && sessionId) {
+			// Session date changed to a date with no session, just update current session
+			const sessionExercises: Record<string, any> = {};
+
+			Object.entries(exerciseValues).forEach(([id, data]) => {
+				const value = data.value?.toString().trim() || '';
+				if (value && value !== '0') {
+					sessionExercises[id] = {
+						value: isNaN(parseFloat(value)) ? value : parseFloat(value),
+						unit: data.unit,
+						notes: data.notes?.trim() || undefined
+					};
+				}
+			});
+
+			sessions.updateSession(sessionId, {
+				id: sessionId,
+				date,
+				exercises: sessionExercises
+			});
+		}
+
+		autoSaveSession();
+	}
+
 	function handleExerciseChange(exerciseId: string, updates: any) {
+		// Create session on first input if it doesn't exist
+		if (!sessionId) {
+			createSession();
+		}
+
 		exerciseValues[exerciseId] = { ...exerciseValues[exerciseId], ...updates };
 		console.log(`Exercise ${exerciseId} updated:`, exerciseValues[exerciseId]);
+		autoSaveSession();
+	}
+
+	function autoSaveSession() {
+		// Clear previous timeout
+		if (autoSaveTimeout) {
+			clearTimeout(autoSaveTimeout);
+		}
+
+		// Debounce auto-save by 1 second
+		autoSaveTimeout = setTimeout(() => {
+			const sessionExercises: Record<string, any> = {};
+			let hasData = false;
+
+			Object.entries(exerciseValues).forEach(([id, data]) => {
+				const value = data.value?.toString().trim() || '';
+				if (value && value !== '0') {
+					sessionExercises[id] = {
+						value: isNaN(parseFloat(value)) ? value : parseFloat(value),
+						unit: data.unit,
+						notes: data.notes?.trim() || undefined
+					};
+					hasData = true;
+				}
+			});
+
+			if (sessionId) {
+				const updatedSession: Session = {
+					id: sessionId,
+					date,
+					exercises: sessionExercises
+				};
+
+				console.log('Auto-saving session:', updatedSession);
+				sessions.updateSession(sessionId, updatedSession);
+			}
+		}, 1000);
 	}
 
 	function handleSubmit(e: Event) {
@@ -55,14 +216,17 @@
 			return;
 		}
 
-		const newSession: Session = {
-			id: `session_${Date.now()}`,
-			date,
-			exercises: sessionExercises
-		};
+		// Update session with final data
+		if (sessionId) {
+			const finalSession: Session = {
+				id: sessionId,
+				date,
+				exercises: sessionExercises
+			};
 
-		console.log('Adding session:', newSession);
-		sessions.addSession(newSession);
+			console.log('Finalizing session:', finalSession);
+			sessions.updateSession(sessionId, finalSession);
+		}
 
 		// Reset form with proper reactivity
 		date = new Date().toISOString().split('T')[0];
@@ -73,6 +237,9 @@
 			])
 		);
 		exerciseValues = resetValues;
+
+		// Reset session ID - next input will create a new session
+		sessionId = null;
 
 		isSubmitting = false;
 	}
@@ -86,6 +253,7 @@
 				id="date"
 				type="date"
 				bind:value={date}
+				onchange={handleDateChange}
 				required
 			/>
 		</div>
@@ -104,7 +272,7 @@
 		</div>
 
 		<button type="submit" class="btn-submit" disabled={isSubmitting}>
-			{isSubmitting ? 'Wird gespeichert...' : 'Trainingseinheit speichern'}
+			{isSubmitting ? 'Wird beendet...' : 'Trainingseinheit beenden'}
 		</button>
 	</form>
 </div>
