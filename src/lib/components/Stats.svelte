@@ -70,8 +70,7 @@
 	function handleExportTSV() {
 		const content = exportToTSV(sessionList, exerciseList);
 		if (content) {
-			const date = new Date().toISOString().split("T")[0];
-			downloadTSV(content, `fitness-log-${date}.tsv`);
+			downloadTSV(content, `fitness-log.tsv`);
 		}
 	}
 
